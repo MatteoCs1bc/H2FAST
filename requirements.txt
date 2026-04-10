@@ -5,3 +5,5 @@ plotly
 xlsxwriter
 matplotlib
 openpyxl
+requests
+geopy
