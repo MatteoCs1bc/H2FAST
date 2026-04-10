@@ -3,6 +3,3 @@ pandas
 numpy
 matplotlib
 xlsxwriter
-warnings
-sys
-io
