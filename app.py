@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 import os
 import requests
 from geopy.geocoders import Nominatim
+import folium
+from streamlit_folium import st_folium
 
 # Importiamo LE TUE classi originali e intatte dal tuo file!
 from motore_h2fast import Analisi_tecnica, Analisi_finanziaria
@@ -13,34 +15,12 @@ from motore_h2fast import Analisi_tecnica, Analisi_finanziaria
 st.set_page_config(page_title="H2FAsT Simulator", layout="wide")
 st.title("Simulatore H2FAsT - Dashboard Interattiva 🏭")
 
-# --- BARRA LATERALE ---
-st.sidebar.header("🌍 Sorgente Dati Solari")
-metodo_dati = st.sidebar.radio("Come vuoi inserire i dati del fotovoltaico?", ["Scarica da PVGIS (Mappa)", "Carica file CSV (Manuale)"])
-
-if metodo_dati == "Scarica da PVGIS (Mappa)":
-    luogo = st.sidebar.text_input("Inserisci il luogo (es. Roma, Italia)", value="Roma, Italia")
-    geolocator = Nominatim(user_agent="h2fast_simulator")
-    try:
-        location = geolocator.geocode(luogo)
-        if location:
-            lat, lon = location.latitude, location.longitude
-            st.sidebar.success(f"📍 Trovato: {location.address}")
-            # Mostriamo la mappa interattiva!
-            df_mappa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-            st.sidebar.map(df_mappa, zoom=5)
-            tipo_file = "SI" # Diciamo al tuo motore che è formato PVGIS
-        else:
-            st.sidebar.error("❌ Luogo non trovato. Riprova.")
-            lat, lon = None, None
-    except:
-        st.sidebar.error("❌ Errore di connessione al servizio mappe.")
-        lat, lon = None, None
-else:
-    file_csv = st.sidebar.file_uploader("Carica file serie oraria CSV", type=["csv"])
-    tipo_file = st.sidebar.selectbox("Il file proviene da PVGIS?", ["SI", "NO"])
-
-st.sidebar.header("📁 Preferenze Lingua")
-lingua = st.sidebar.selectbox("Lingua", ["ITA", "ENG"])
+# ==========================================
+# BARRA LATERALE: PARAMETRI
+# ==========================================
+st.sidebar.header("📁 Preferenze")
+lingua = st.sidebar.selectbox("Lingua output", ["ITA", "ENG"])
+n_progetti = st.sidebar.number_input("Mostra i Top N Progetti", value=5, min_value=1)
 
 st.sidebar.header("⚙️ Parametri Tecnici")
 p_PV = st.sidebar.number_input("PV system peak power [kWp]", value=1000.0)
@@ -67,39 +47,95 @@ prezzoindrogeno = st.sidebar.number_input("Hydrogen sale price [€/kg]", value=
 tassoVAN = st.sidebar.number_input("Discount rate for NPV", value=0.07)
 inflazione = st.sidebar.number_input("General inflation rate", value=0.01)
 DurPianEcon = st.sidebar.number_input("Economic plan duration [years]", value=20, step=1)
-n_progetti = st.sidebar.number_input("Mostra i Top N Progetti", value=5, min_value=1)
 
-# --- AVVIO PROCESSO ---
-if st.button("🚀 Avvia Simulazione", use_container_width=True):
+
+# ==========================================
+# SCHERMATA PRINCIPALE: STEP 1 (SORGENTE DATI)
+# ==========================================
+st.header("📍 Step 1: Sorgente Dati Fotovoltaico")
+metodo_dati = st.radio("Come vuoi inserire i dati di produzione solare?", ["Mappa Interattiva (Download da PVGIS)", "Carica file CSV (Manuale)"], horizontal=True)
+
+lat, lon = None, None
+file_csv = None
+tipo_file = "SI"
+
+if metodo_dati == "Mappa Interattiva (Download da PVGIS)":
+    col_testo, col_mappa = st.columns([1, 2])
+    
+    with col_testo:
+        st.markdown("### 1. Trova la zona")
+        luogo = st.text_input("Cerca una città per centrare la mappa:", "Roma, Italia")
+        st.markdown("### 2. Piazza il Pin")
+        st.info("👉 **Clicca fisicamente un punto sulla mappa** a destra per selezionare le coordinate esatte del tuo impianto.")
+        
+        # Geolocalizzazione per centrare la mappa
+        geolocator = Nominatim(user_agent="h2fast_simulator")
+        start_loc = [41.89, 12.49] # Default Roma
+        zoom = 5
+        if luogo:
+            try:
+                loc = geolocator.geocode(luogo)
+                if loc:
+                    start_loc = [loc.latitude, loc.longitude]
+                    zoom = 10
+            except:
+                pass
+
+    with col_mappa:
+        # Creiamo la mappa interattiva
+        m = folium.Map(location=start_loc, zoom_start=zoom)
+        # st_folium cattura i click dell'utente!
+        map_data = st_folium(m, height=350, width=700)
+
+    # Controlliamo se l'utente ha cliccato
+    if map_data and map_data.get("last_clicked"):
+        lat = map_data["last_clicked"]["lat"]
+        lon = map_data["last_clicked"]["lng"]
+        st.success(f"✅ Coordinate confermate: Latitudine **{lat:.4f}**, Longitudine **{lon:.4f}**")
+    else:
+        st.warning("⚠️ In attesa di selezione: Clicca sulla mappa prima di avviare la simulazione.")
+
+else:
+    st.markdown("### Caricamento Manuale")
+    file_csv = st.file_uploader("Carica il tuo file di serie oraria CSV", type=["csv"])
+    tipo_file = st.selectbox("Il file proviene da PVGIS?", ["SI", "NO"])
+
+
+# ==========================================
+# AVVIO SIMULAZIONE
+# ==========================================
+st.divider()
+st.header("⚙️ Step 2: Esecuzione")
+
+if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="primary"):
     temp_filename = "temp_input_orario"
 
-    # SCARICAMENTO AUTOMATICO O CARICAMENTO MANUALE
-    if metodo_dati == "Scarica da PVGIS (Mappa)":
+    # GESTIONE DEI DATI IN INGRESSO
+    if metodo_dati == "Mappa Interattiva (Download da PVGIS)":
         if lat is None or lon is None:
-            st.warning("⚠️ Inserisci un luogo valido prima di avviare.")
+            st.error("❌ Devi cliccare un punto sulla mappa prima di avviare!")
             st.stop()
             
-        with st.spinner('📡 Download dei dati solari dai server europei PVGIS in corso...'):
-            # Chiediamo a PVGIS l'anno 2019 (per avere esattamente 8760 ore, non bisestile)
+        with st.spinner('📡 Download dei dati solari dai server PVGIS in corso...'):
             url = f"https://re.jrc.ec.europa.eu/api/v5_2/seriescalc?lat={lat}&lon={lon}&startyear=2019&endyear=2019&pvcalculation=1&peakpower={p_PV}&loss=14&outputformat=csv"
             response = requests.get(url)
             if response.status_code == 200:
                 with open(temp_filename + ".csv", "wb") as f:
                     f.write(response.content)
             else:
-                st.error("❌ Errore nel download dei dati da PVGIS. Riprova più tardi.")
+                st.error("❌ Errore nel download dei dati da PVGIS. Riprova più tardi o usa un CSV manuale.")
                 st.stop()
     else:
         if file_csv is None:
-            st.warning("⚠️ Carica prima un file CSV per poter procedere.")
+            st.error("❌ Devi caricare un file CSV prima di avviare!")
             st.stop()
         with open(temp_filename + ".csv", "wb") as f:
             f.write(file_csv.getbuffer())
 
-    # INIZIO CALCOLO NEL MOTORE ORIGINALE
-    with st.spinner('⚙️ Calcolo in corso nel motore matematico... (L\'ottimizzazione memoria è attiva)'):
+    # ESECUZIONE DEL TUO MOTORE MATEMATICO
+    with st.spinner('Calcolo in corso nel motore matematico... L\'ottimizzazione della RAM è attiva.'):
         
-        # 1. CHIAMIAMO LA TUA ANALISI TECNICA
+        # Analisi Tecnica
         analisi1 = Analisi_tecnica(
             file_csv=temp_filename, tipo_file=tipo_file, p_PV=p_PV, dP_el=dP_el, 
             batteria=batteria, dP_bat=dP_bat, min_batt=min_batt, max_batteria=max_batteria, 
@@ -110,7 +146,7 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
         if os.path.exists(temp_filename + ".csv"):
             os.remove(temp_filename + ".csv")
             
-        # 2. CHIAMIAMO L'ANALISI FINANZIARIA
+        # Analisi Finanziaria
         top_progetti_tuples = []
         dati_scatter = []
         
@@ -156,7 +192,10 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
     st.success("✅ Calcolo completato!")
     df_tutti = pd.DataFrame(dati_scatter).dropna()
 
-    # --- DASHBOARD INTERATTIVA ---
+    # ==========================================
+    # DASHBOARD DEI RISULTATI
+    # ==========================================
+    st.divider()
     tab1, tab2, tab3 = st.tabs(["📊 Tabelle Finanziarie", "⚡ Flussi Energetici", "📈 Analisi di Sensitività e Pareto"])
 
     with tab1:
@@ -198,7 +237,7 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
 
     with tab3:
         st.subheader("Analisi di Sensitività e Frontiera di Pareto")
-        st.markdown("Usa le tendine per esplorare visivamente come la taglia dell'elettrolizzatore o della batteria impattano sul VAN o sulla Produzione di Idrogeno di **tutti gli scenari simulati**.")
+        st.markdown("Usa le tendine per esplorare visivamente l'impatto delle variabili su **tutti gli scenari simulati**.")
         col_x, col_y, col_color = st.columns(3)
         colonne_disp = df_tutti.columns.tolist()
         
