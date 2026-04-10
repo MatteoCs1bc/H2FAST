@@ -332,7 +332,7 @@ class Analisi_tecnica:
         if self.batteria == "SI": self.run_analysis_battery_static_min()
         elif self.batteria == "NO": self.run_analysis_nobattery()
 
-    class Analisi_finanziaria:
+class Analisi_finanziaria:
     def __init__(self, Terr = 0, OpeE = 0, ImpPV1 = 0, ImpPV1eurokW = 800, EletteuroKW = 1650, CompreuroKW = 4000, AccuE = 0, AccuEeurokW = 200,
                  idrogstocperc = 1/10, StazzRif = 500000, SpeTOpere = 0, BombSto = 0, LavoImp = 0, CarrEll = 0, CapFac = 0, PotEle = 0,
                  tassoDEN = 0.005, ProdAnnuaIdrogkg = 0, bar = 300, costlitroacqua = 0.035, costounitariostoccaggio = 0, PercEserImp = 0.005, Percentimpianti = 0.0025,
