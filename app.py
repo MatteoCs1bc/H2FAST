@@ -49,12 +49,11 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
     if file_csv is None:
         st.warning("⚠️ Carica prima un file CSV per poter procedere.")
     else:
-        # Salviamo temporaneamente il file per il tuo motore
         temp_filename = "temp_input_orario"
         with open(temp_filename + ".csv", "wb") as f:
             f.write(file_csv.getbuffer())
 
-        with st.spinner('Calcolo in corso nel motore originale. Il server sta ottimizzando la memoria...'):
+        with st.spinner('Calcolo in corso... Il server sta ottimizzando la memoria...'):
             
             # 1. CHIAMIAMO LA TUA ANALISI TECNICA
             analisi1 = Analisi_tecnica(
@@ -67,26 +66,22 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
             if os.path.exists(temp_filename + ".csv"):
                 os.remove(temp_filename + ".csv")
                 
-            # 2. CHIAMIAMO L'ANALISI FINANZIARIA (Gestione Memoria Ottimizzata)
+            # 2. CHIAMIAMO L'ANALISI FINANZIARIA
             top_progetti_tuples = []
-            dati_scatter = [] # Dizionario leggero per i grafici di sensitivity
+            dati_scatter = []
             
-            # Funzione interna per salvare solo i progetti migliori e svuotare la RAM
             def salva_memoria(an_fin, andamenti_tecnici, val_batteria):
                 van = an_fin.VAN if an_fin.VAN is not None else -float('inf')
-                # Dati leggeri per i grafici globali
                 dati_scatter.append({
                     'VAN [€]': van, 'TIR [%]': an_fin.TIR, 'Taglia Elettrolizzatore [kW]': an_fin.PotEle,
                     'Taglia Batteria [kWh]': val_batteria, 'Capacity Factor [%]': an_fin.CapFac,
                     'Produzione Idrogeno [kg]': an_fin.ProdAnnuaIdrogkg, 'Investimento [€]': an_fin.investimento,
                     'Spegnimenti [n]': an_fin.spegn_giorn
                 })
-                # Salvataggio Top N
                 top_progetti_tuples.append((van, an_fin, andamenti_tecnici))
                 top_progetti_tuples.sort(key=lambda x: x[0], reverse=True)
-                return top_progetti_tuples[:n_progetti] # Svuota i progetti in eccesso!
+                return top_progetti_tuples[:n_progetti]
 
-            # Avvio ciclo progetti
             prog_bar = st.progress(0)
             tot_progetti = len(analisi1.P_elc) if batteria == "NO" else len(analisi1.potenza_batt)
 
@@ -106,26 +101,20 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
 
             prog_bar.empty()
             
-            # Estraiamo i Top N definitivi
             top_progetti = []
             andamenti_top = []
             for item in top_progetti_tuples:
                 an_fin_obj = item[1]
-                an_fin_obj.costruzione_tabelle() # Creiamo i dataframe pandas solo per i migliori!
+                an_fin_obj.costruzione_tabelle()
                 top_progetti.append(an_fin_obj)
                 andamenti_top.append(item[2])
 
         st.success("✅ Calcolo completato!")
-
-        # Creiamo il dataframe leggero per i grafici globali
         df_tutti = pd.DataFrame(dati_scatter).dropna()
 
-        # =================================================================
-        # DASHBOARD INTERATTIVA (TABS)
-        # =================================================================
-        tab1, tab2, tab3 = st.tabs(["📊 Tabelle Finanziarie", "⚡ Flussi Energetici (Grafico)", "📈 Analisi Relazioni (Scatter & SA)"])
+        # --- DASHBOARD ---
+        tab1, tab2, tab3 = st.tabs(["📊 Tabelle Finanziarie", "⚡ Flussi Energetici", "📈 Analisi Relazioni"])
 
-        # TAB 1: TABELLE
         with tab1:
             st.subheader("Sommario Migliori Configurazioni")
             df_sommario = pd.DataFrame({
@@ -137,24 +126,20 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
                 'Produzione Idrogeno [kg/anno]': [p.ProdAnnuaIdrogkg for p in top_progetti]
             }).T
             df_sommario.columns = [f"Progetto {i+1}" for i in range(len(top_progetti))]
-            st.dataframe(df_sommario.style.format("{:,.2f}"), use_container_width=True)
+            st.dataframe(df_sommario, use_container_width=True)
 
             col_sel1, col_sel2 = st.columns(2)
-            scelta_eco = col_sel1.selectbox("Seleziona Progetto per Conto Economico:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
-            st.write("**Conto Economico**")
+            scelta_eco = col_sel1.selectbox("Conto Economico:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
             st.dataframe(top_progetti[scelta_eco].dfContoEconomico, use_container_width=True)
             
-            scelta_cassa = col_sel2.selectbox("Seleziona Progetto per Flussi di Cassa:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
-            st.write("**Flussi di Cassa**")
+            scelta_cassa = col_sel2.selectbox("Flussi di Cassa:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
             st.dataframe(top_progetti[scelta_cassa].dfFlussiMonetari, use_container_width=True)
 
-        # TAB 2: FLUSSI ENERGETICI (Line Chart Plotly)
         with tab2:
-            st.subheader("Andamento Orario dei Flussi (Prime 200 ore per fluidità)")
-            scelta_ene = st.selectbox("Seleziona Progetto per Grafico Flussi:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
+            st.subheader("Andamento Orario dei Flussi (Prime 200 ore)")
+            scelta_ene = st.selectbox("Progetto per Grafico Flussi:", range(len(top_progetti)), format_func=lambda x: f"Progetto {x+1}")
             andamenti = andamenti_top[scelta_ene]
             
-            # andamenti: 0=AutoH2, 1=Massa, 2=Immessa, 3=PV, 4=PotMinEl, 5=PotMaxEl (6=Batt, 7=MaxBatt se presenti)
             ore = np.arange(200)
             fig_flussi = go.Figure()
             fig_flussi.add_trace(go.Scatter(x=ore, y=andamenti[3][:200], name='Prodotta FV', line=dict(color='#92D050')))
@@ -167,24 +152,20 @@ if st.button("🚀 Avvia Simulazione", use_container_width=True):
             fig_flussi.update_layout(xaxis_title="Ora dell'anno", yaxis_title="Energia [kWh] / Potenza [kW]")
             st.plotly_chart(fig_flussi, use_container_width=True)
 
-        # TAB 3: SCATTER E SENSITIVITY ANALYSIS (Plotly Express)
         with tab3:
-            st.subheader("Grafici di Relazione Personalizzabili (Analisi su TUTTI i progetti)")
-            st.markdown("Crea la tua **Frontiera di Pareto** o **Analisi di Sensitività** selezionando le variabili. I colori creano l'effetto gradiente in automatico.")
-            
+            st.subheader("Analisi di Sensitività e Pareto (su tutti gli scenari testati)")
             col_x, col_y, col_color = st.columns(3)
             colonne_disp = df_tutti.columns.tolist()
             
             x_var = col_x.selectbox("Asse X", colonne_disp, index=colonne_disp.index('Taglia Elettrolizzatore [kW]'))
             y_var = col_y.selectbox("Asse Y", colonne_disp, index=colonne_disp.index('VAN [€]'))
-            color_var = col_color.selectbox("Colore (Sensitività)", colonne_disp, index=colonne_disp.index('Taglia Batteria [kWh]') if batteria=="SI" else 0)
+            color_var = col_color.selectbox("Colore", colonne_disp, index=colonne_disp.index('Taglia Batteria [kWh]') if batteria=="SI" else 0)
 
             fig_sa = px.scatter(
                 df_tutti, x=x_var, y=y_var, color=color_var,
-                color_continuous_scale=["#07d5df", "#f407fe"], # I tuoi colori azzurro-magenta
+                color_continuous_scale=["#07d5df", "#f407fe"],
                 hover_data=['VAN [€]', 'TIR [%]', 'Capacity Factor [%]']
             )
             fig_sa.update_traces(marker=dict(size=8, opacity=0.8))
-            fig_sa.update_layout(title=f"Analisi: {x_var} vs {y_var} (Colore: {color_var})")
-            
+            fig_sa.update_layout(title=f"{x_var} vs {y_var}")
             st.plotly_chart(fig_sa, use_container_width=True)
