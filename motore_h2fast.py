@@ -427,7 +427,7 @@ def run_analysis_battery_static_min(self):
                     self.status_text.text(f"{pct * 100:.1f}% - {msg}")
                 index += 1
 
-def run_analysis(self):
+    def run_analysis(self):
         if self.batteria == "SI":
             self.run_analysis_battery_static_min()
         elif self.batteria == "NO":
