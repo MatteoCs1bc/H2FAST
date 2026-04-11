@@ -420,18 +420,18 @@ def run_analysis_battery_static_min(self):
                 self.andamenti[index, 9, :] = Energia_disp
                 self.andamenti[index, 10, :] = max_erogabile
                 
-    if hasattr(self, 'progress_bar') and self.progress_bar is not None:
+                if hasattr(self, 'progress_bar') and self.progress_bar is not None:
                     pct = (index + 1) / total_projects
                     self.progress_bar.progress(pct)
                     msg = "Technical Analysis with Battery" if self.lingua == "ENG" else "Analisi Tecnica con batteria"
                     self.status_text.text(f"{pct * 100:.1f}% - {msg}")
                 index += 1
 
-    def run_analysis(self):
-        if self.batteria == "SI":
-            self.run_analysis_battery_static_min()
-        elif self.batteria == "NO":
-            self.run_analysis_nobattery()
+def run_analysis(self):
+    if self.batteria == "SI":
+        self.run_analysis_battery_static_min()
+    elif self.batteria == "NO":
+        self.run_analysis_nobattery()
 
 
 
