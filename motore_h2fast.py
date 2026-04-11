@@ -216,334 +216,216 @@ def run_analysis_nobattery(self):
                 msg = "Technical Analysis without Battery" if self.lingua == "ENG" else "Analisi Tecnica senza batteria"
                 self.status_text.text(f"{pct * 100:.1f}% - {msg}")
 
-    def run_analysis_battery_static_min(self):  # queste sono le logiche della produzione con batteria
-        index = 0  # qui ho gli indici dei progetti
-        for p_elc in self.P_elc:  # per ogni taglia di elettrolizzatore
-            p_elc_min = self.min_elet * p_elc  # Potenza minima di soglia per entrata in lavoro dell'elettrolizzatore
+def run_analysis_battery_static_min(self):  
+        index = 0
+        total_projects = self.qt_progetti
+        
+        # Pre-estraiamo le variabili usate migliaia di volte per evitare chiamate 'self.' lente
+        E_PV_array = self.E_PV
+        eff_batt = self.eff_batt
+        min_batt_pct = self.min_batt
+        max_batt_pct = self.max_batteria
+        
+        for p_elc in self.P_elc:  
+            p_elc_min = self.min_elet * p_elc  
+            
+            gran_bat = 0
+            if p_elc <= 100: gran_bat = 10
+            elif 100 < p_elc <= 500: gran_bat = 20
+            elif 500 < p_elc <= 1000: gran_bat = 50
+            elif p_elc > 1000: gran_bat = 100
+            P_batt = np.linspace(0, self.dP_bat * p_elc, gran_bat)
 
-            #vecchio snippet per popolamento vettore dimensioni accumulo
-            """if self.p_PV > 1000: # aumento la granularità se la potenza del PV è maggiore di 1 mW
-                P_batt = np.arange(0,2*p_elc + 1,self.dP_bat*2)# Range di valori per P_elc (val min, val max, step) in funzione di p_PV, taglia dell'impianto PV
-            if self.p_PV <= 1000:
-                P_batt = np.arange(0,2*p_elc + 1,self.dP_bat)"""
+            for p_batt in P_batt: 
+                e_batt_max = p_batt * max_batt_pct  
+                
+                # Vettori di output
+                E_H2_h = np.zeros(len(E_PV_array))  
+                M_H2_h = np.zeros(len(E_PV_array))  
+                E_im_h = np.zeros(len(E_PV_array))  
+                E_batt_disponibile_h = np.zeros(len(E_PV_array)) 
+                E_batt = np.zeros(len(E_PV_array)) 
+                Energia_disp = np.zeros(len(E_PV_array)) 
+                max_erogabile = np.zeros(len(E_PV_array)) 
+                
+                off_count = 0 
+                flag = 1  
+                count_to_24 = 0 
+                count2 = 0  
+                j = 0 
+                
+                # Inizializzazione per l'ora 0
+                batt_prev = 0.0
 
-            if p_elc <= 100:
-                gran_bat = 10
-            elif 100 < p_elc <= 500:
-                gran_bat = 20
-            elif 500 < p_elc <= 1000:
-                gran_bat = 50
-            elif p_elc > 1000:
-                gran_bat = 100
-            P_batt = np.linspace(0, self.dP_bat * p_elc, gran_bat) #self.dP_bat * p_elc / gran_bat
+                # LOOP BARE-METAL: Ottimizzato per la massima velocità
+                for i, p_pv in enumerate(E_PV_array): 
+                    e_im = 0.0
+                    e_H2 = 0.0
+                    m_H2 = 0.0
+                    
+                    # Calcolo energia disponibile in batteria
+                    energia_disp_batt = max(0.0, batt_prev - min_batt_pct * p_batt) if i != 0 else 0.0
+                    energia_disp = p_pv + eff_batt * energia_disp_batt 
 
-            # noinspection PyUnboundLocalVariable
-            for p_batt in P_batt: # per ogni taglia della batteria
-                    e_batt_max = p_batt*self.max_batteria  # questa è la potenza massima erogabile dalle batterie (nel calcolo della potenza max è considerata anche l'efficienza della batteria stessa)
-                    E_H2_h = np.zeros(len(self.E_PV))  # vettore energia autoconsumata per produrre idrogeno
-                    M_H2_h = np.zeros(len(self.E_PV))  # vettore massa idrogeno prodotto
-                    E_im_h = np.zeros(len(self.E_PV))  # vettore energia immessa in rete
-                    E_batt_disponibile_h = np.zeros(len(self.E_PV)) # vettore energia disponibile in batteria
-                    E_batt = np.zeros(len(self.E_PV)) # vettore energia in batteria
-                    P_pv_h = np.zeros(len(self.E_PV)) # energia prodotta da fotovoltaico ora per ora
-                    Energia_disp = np.zeros(len(self.E_PV)) # vettore con l'energia disponibile PV e batteria
-                    Pot_min_elett = np.full(len(self.E_PV), p_elc_min) # vettore potenza minima elettrolizzatore
-                    Pot_max_elett = np.full(len(self.E_PV), p_elc) # vettore potenza massima elettrolizzatore
-                    Pot_max_batt = np.full(len(self.E_PV), p_batt) # max erogabile dalla batteria
-                    max_erogabile = np.zeros(len(self.E_PV)) # max erogabile considerando PV e batteria
-                    # variabile per lo spegnimento e per evitare che la batteria si carichi/scarichi più volte al giorno
-                    self.off = 0 # ad inizio periodo gli spegnimenti sono uguali a zero
-                    self.flag = 1  # indica l'elettrolizzatore spento
-                    self.count_to_24 = 0 # è uno scalare (se conta fino a 24, significa che per intero un giorno l'elttrolizzatore non ha funzionato)
-                    self.count2 = 0  # conta i giorni in cui l'elettrolizzatore è spento tutto il giorno
-                    j = 0 # mi serve per evitare che le batterie si scarichino/carichino più di una volta all'ora
-
-
-
-                    for i,p_pv in enumerate(self.E_PV): # per ogni ora di produzione
-                        e_im = 0
-
-                        if i == 0: # la prima volta determino che in batteria non c'è niente
-                            energia_disp_batt = 0
-                        elif i != 0:
-                            energia_disp_batt = max(0, E_batt[i - 1] - self.min_batt*p_batt) # energia disponibile nella batteria è quella che va oltre la carica minima (ad esempio il 20%); se la carica è <= minimo, allora l'energia disponibile viene assunta come 0
-                        # noinspection PyUnboundLocalVariable
-
-                        energia_disp = p_pv + self.eff_batt*energia_disp_batt # l'energia disponibile è la somma dell'energia disponibile in batteria (considerando che in eletrrolizzatore entra solo il 95% di essa es.) e l'energia da PV
-
-
-                        if p_pv == 0: # Caso 1; PV non produce, quindi la produzione se esistente viene solo da batteria
-
-                            if energia_disp < p_elc_min: # se l'energia disponibile non è sufficiente per produrre, non produco
-                                e_H2 = 0 # non produco
-
-                                m_H2 = 0 # non produco idrogeno
-
-                                if i == 0: # se questa è la prima ora ovvero quando l'energia all'inizio è uguale a zero
-                                    E_batt[0] = 0 # qui metto 0 nel primo valore della batteria
-                                    j += 1
-                                elif i != 0:
-                                    E_batt[i] = E_batt[i-1] # il livello nella batteria non cambia, perché la produzione del PV = 0
-                                    j += 1
-
-                                self.count_to_24 += 1 # continua a contare fino a 24
-                                if self.flag == 0:  # se l'ora precedente era acceso
-                                    self.off += 1
-                                self.flag = 1 # qui è spento
-                                if self.count_to_24 == 24: # se è già da 24 ore che non lavora
-                                    self.count2 += 1 # questo considererà i giorni in cui l'impianto non ha prodotto, perché il PV ha prodotto pochissimo o non ha prodotto
-                                    self.count_to_24 = 0 # qui riporta a 0 il count to 24
-
-                            elif p_elc_min <= energia_disp < p_elc: # se invece l'energia disponibile è tra il minimo e il massimo
-                                e_H2 = min(energia_disp, e_batt_max * self.eff_batt) # deve essere erogato all'elettrolizzatore il min tra questi due valori
-                                # o erogo tutta l'energia disponibile; in questo caso il 95% dell'energia disponibile in batteria; oppure gli do tutta l'energia erogabile dalla batteria (il 95% del massimo della batteria)
-
-                                var = e_H2 / p_elc  # diverso rispetto a prima, perché non lavora a max potenza l'elett
-                                eta = self.eff_elc(var)
-                                m_H2 = e_H2 * eta / (120 / 3.6)
-
-
-                                #↓↓↓↓↓↓↓↓↓ ottimizzato il 09/12/2024 per evitare un ingresso ininfluente in un if
-                                E_batt[i] = E_batt[i - 1] - e_H2 / self.eff_batt
+                    if p_pv == 0: 
+                        if energia_disp < p_elc_min: 
+                            if i == 0: 
+                                E_batt[0] = 0.0 
                                 j += 1
-
-                                """if e_H2 == energia_disp and i == j: # se nell'elettrolizzatore va tutta l'energia
-                                    E_batt[i] = E_batt[i -1] - energia_disp/self.eff_batt
-                                    j += 1
-                                
-                                
-                                elif e_H2 == e_batt_max and i == j: # se l'energia che esce è il max possibile
-                                    E_batt[i] = E_batt[i -1] - e_batt_max/self.eff_batt # uscirà dall'elettrolizzatore il massimo possibile
-                                    j += 1
-                                    """
-
-
-                                self.flag = 0 # qui l'elett lavora
-                                self.count_to_24 = 0 # qui porta a 0 il contatore che conta fino a 24
-
-                            elif p_elc <= energia_disp: # se ho disponibile più di quanto serve all'elettrolizzatore
-                                e_H2 = min(p_elc, e_batt_max, energia_disp_batt)*self.eff_batt # simile a prima ma in questo caso non può eccedere la potenza del l'elett
-
-                                var = e_H2 / p_elc  # come vale nel caso di elett non a max xapacità
-                                eta = self.eff_elc(var)
-                                m_H2 = e_H2 * eta / (120 / 3.6)  # massa idrogeno
-
-
-                                E_batt[i] = E_batt[i - 1] - e_H2 / self.eff_batt
-
+                            else: 
+                                E_batt[i] = batt_prev
                                 j += 1
-
-                                self.flag = 0 # qui l'elett lavora
-                                self.count_to_24 = 0 # qui porta il contatore che conta fino a 24 a 0
-
-
-                        elif 0 < p_pv < p_elc_min: # Caso 2: se il fotovoltaico da solo non basta ad alimentare l'elettrolizzatore a minima potenza
-
-                            # non considero il caso in cui l'energia disponibile sia uguale a 0 per definizione di questa (p_pv > 0)
-                            if energia_disp < p_elc_min: # se l'energia disponibile non è abbastanza
-
-                                e_H2 = 0 # non produco idrogeno
-
-                                m_H2 = 0
-
-                                j += 1
-
-                                if i == 0: # questo è il primo caso in cui si carica la batteria
-                                    E_batt[i] = min(p_pv, e_batt_max) * self.eff_batt# nella batteria entra solo il 95% dell'energia del fotovoltaico
-
-                                elif i != 0: # se non è la prima volta dipende da quanto è carica la batteria
-                                    E_batt[i] = min(  (min(p_pv, e_batt_max)*self.eff_batt + E_batt[i-1]),      p_batt )# nella batteria entra solo il 95% dell'energia del fotovolotaico
-
-
-                                        #l'energia che immetto è uguale alla differenza tra la massima potenza a cui la batteria può caricare e la potenza prodotta dal fotovoltaico;
-                                e_im = max(   p_pv - (E_batt[i] - E_batt[i-1])/self.eff_batt,    0)
-
-                                self.count_to_24 += 1  # continua a contare fino a 24
-                                if self.flag == 0:  # se l'ora precedente era acceso
-                                    self.off += 1
-                                self.flag = 1  # qui è spento
-                                if self.count_to_24 == 24:  # se è già da 24 ore che non lavora
-                                    self.count2 += 1  # questo considererà i giorni in cui l'impianto non ha prodotto, perché il PV ha prodotto pochissimo o non ha prodotto
-                                    self.count_to_24 = 0  # qui riporta a 0 il count to 24
-
-                                """if self.flag==0: #era già spento
-                                    self.off += 1
-
-                                self.flag = 1 # si spegne/è spento l'lettrolizzatore
-                                self.count_to_24 += 1 # non sta lavorando
-
-                                if self.count_to_24 == 24: # controlla se non lavora da più di 24 ore
-                                    self.count2 += 1
-                                    self.count_to_24 = 0"""
-
-                            elif p_elc_min <= energia_disp < p_elc: # se seono in grado di produrre
-
-                                e_H2 = min(energia_disp, e_batt_max*self.eff_batt + p_pv) # alimento eletrolizzatore con il minimo tra (tutta l'energia disponibile, cioè batt + produzione) e (la massima potenza che la batteria può fornire nell'ora + produzione)
-
-                                var = e_H2 / p_elc  # come vale nel caso di elett non a max xapacità
-                                eta = self.eff_elc(var)
-                                m_H2 = e_H2 * eta / (120 / 3.6)
-
-
-
-                                if i == j:
-                                    if e_H2 == energia_disp: # scarico completamente la batteria
-                                        E_batt[i] = self.min_batt*e_batt_max
-
-                                    elif e_H2 == e_batt_max*self.eff_batt + p_pv: # scarico la batteria quanto serve
-                                        E_batt[i] = E_batt[i-1] - e_batt_max
-
-                                j += 1
-                                self.flag = 0 # qui è acceso
-                                self.count_to_24 = 0 # cosi come prima
-
-                            elif p_elc <= energia_disp: # se ho energia abbastanza da dare energia all'eletrolizzatore affinchè lavori al massimo
-                                e_H2 = min(e_batt_max + p_pv, p_elc) # alimento eletrolizzatore con il minimo tra (la massima potenza che la batteria può fornire nell'ora + produzione) e (la potenza nominale dell'elettrolizzatore)
-
-                                if i==j:
-                                    if e_H2 == e_batt_max + p_pv: # lavoro con la massima potenza che la batteria può fornire nell'ora + produzione
-                                        var = e_H2 / p_elc  # come vale nel caso di elett non a max xapacità
-                                        eta = self.eff_elc(var)
-                                        m_H2 = e_H2 * eta / (120 / 3.6)
-
-                                        E_batt[i] = E_batt[i-1] - e_batt_max
-
-                                    elif e_H2 == p_elc:
-                                        m_H2 = e_H2 * 0.565 / (120 / 3.6)
-                                        E_batt[i] = E_batt[i-1] - (p_elc - p_pv)/self.eff_batt
-
-                                j += 1
-
-                                self.flag = 0 # qui è acceso
-                                self.count_to_24 = 0 # cosi come prima
-
-
-                        elif p_elc_min <= p_pv < p_elc: # Caso 3: ovvero quanto la potenza da PV è tra il minimo e il massimo
-
-                            if p_elc_min <= energia_disp < p_elc:
-                                e_H2 = min(energia_disp, e_batt_max*self.eff_batt + p_pv)
-
-                                var = e_H2 / p_elc  # come vale nel caso di elett non a max xapacità
-                                eta = self.eff_elc(var)
-                                m_H2 = e_H2 * eta / (120 / 3.6)
-
-                                if i == j:
-                                    if e_H2 == energia_disp:
-                                        E_batt[i] = E_batt[i-1] - (energia_disp  - p_pv) / self.eff_batt
-
-
-                                    elif e_H2 == e_batt_max*self.eff_batt + p_pv:
-                                        E_batt[i] = E_batt[i-1] - e_batt_max
-
-                                j += 1
-
-                                self.flag = 0 # qui è acceso
-                                self.count_to_24 = 0 # cosi come prima
-
-                            elif p_elc <= energia_disp:
-
-                                e_H2 = min(e_batt_max * self.eff_batt + p_pv, p_elc)
-
-                                if i == j:
-
-                                    if e_H2 == e_batt_max * self.eff_batt + p_pv:
-                                        var = e_H2 / p_elc  # come vale nel caso di elett non a max xapacità
-                                        eta = self.eff_elc(var)
-                                        m_H2 = e_H2 * eta / (120 / 3.6)
-
-                                        E_batt[i] = E_batt[i-1] - e_batt_max
-
-
-
-                                    elif e_H2 == p_elc:
-                                        m_H2 = e_H2 * 0.565 / (120 / 3.6)
-
-                                        E_batt[i] = E_batt[i-1] - (p_elc - p_pv)/self.eff_batt
-
-
-                                j += 1
-
-                                self.flag = 0 # qui è acceso
-                                self.count_to_24 = 0 # qui porta il contatore che conta fino a 24 a 0
-
-
-                        elif p_elc <= p_pv:
-
-                            e_H2 = p_elc
-
-                            m_H2 = e_H2 * 0.565 / (120 / 3.6)
-
-                            # noinspection PyTypeChecker
-
-                            #                          surplus energetico      spazio in accumulo     potenza massima batteria
-                            E_batt[i] = E_batt[i-1]   +     min((p_pv - p_elc) * self.eff_batt, p_batt - E_batt[i - 1], e_batt_max)
-
-                            e_im = p_pv - p_elc - (E_batt[i] - E_batt[i-1]) / self.eff_batt
-
+                            
+                            count_to_24 += 1 
+                            if flag == 0: off_count += 1
+                            flag = 1 
+                            if count_to_24 == 24: 
+                                count2 += 1
+                                count_to_24 = 0 
+                        elif p_elc_min <= energia_disp < p_elc: 
+                            e_H2 = min(energia_disp, e_batt_max * eff_batt) 
+                            eta = self.eff_elc(e_H2 / p_elc)
+                            m_H2 = (e_H2 * eta) / (120 / 3.6)
+                            E_batt[i] = batt_prev - e_H2 / eff_batt
                             j += 1
+                            flag = 0 
+                            count_to_24 = 0 
+                        elif p_elc <= energia_disp: 
+                            e_H2 = min(p_elc, e_batt_max, energia_disp_batt) * eff_batt 
+                            eta = self.eff_elc(e_H2 / p_elc)
+                            m_H2 = (e_H2 * eta) / (120 / 3.6)  
+                            E_batt[i] = batt_prev - e_H2 / eff_batt
+                            j += 1
+                            flag = 0 
+                            count_to_24 = 0 
 
-                            self.flag = 0 # qui è acceso
-                            self.count_to_24 = 0 # qui porta il contatore che conta fino a 24 a 0
+                    elif 0 < p_pv < p_elc_min: 
+                        if energia_disp < p_elc_min: 
+                            j += 1
+                            if i == 0: 
+                                E_batt[i] = min(p_pv, e_batt_max) * eff_batt
+                            else: 
+                                E_batt[i] = min((min(p_pv, e_batt_max) * eff_batt + batt_prev), p_batt)
+                            
+                            e_im = max(p_pv - (E_batt[i] - batt_prev) / eff_batt, 0.0)
+                            count_to_24 += 1  
+                            if flag == 0: off_count += 1
+                            flag = 1  
+                            if count_to_24 == 24: 
+                                count2 += 1
+                                count_to_24 = 0  
+                        elif p_elc_min <= energia_disp < p_elc: 
+                            e_H2 = min(energia_disp, e_batt_max * eff_batt + p_pv) 
+                            eta = self.eff_elc(e_H2 / p_elc)
+                            m_H2 = (e_H2 * eta) / (120 / 3.6)
+                            if i == j:
+                                if e_H2 == energia_disp: 
+                                    E_batt[i] = min_batt_pct * e_batt_max
+                                elif e_H2 == e_batt_max * eff_batt + p_pv: 
+                                    E_batt[i] = batt_prev - e_batt_max
+                            j += 1
+                            flag = 0 
+                            count_to_24 = 0 
+                        elif p_elc <= energia_disp: 
+                            e_H2 = min(e_batt_max + p_pv, p_elc) 
+                            if i == j:
+                                if e_H2 == e_batt_max + p_pv: 
+                                    eta = self.eff_elc(e_H2 / p_elc)
+                                    m_H2 = (e_H2 * eta) / (120 / 3.6)
+                                    E_batt[i] = batt_prev - e_batt_max
+                                elif e_H2 == p_elc:
+                                    m_H2 = e_H2 * 0.565 / (120 / 3.6)
+                                    E_batt[i] = batt_prev - (p_elc - p_pv) / eff_batt
+                            j += 1
+                            flag = 0 
+                            count_to_24 = 0 
 
+                    elif p_elc_min <= p_pv < p_elc: 
+                        if p_elc_min <= energia_disp < p_elc:
+                            e_H2 = min(energia_disp, e_batt_max * eff_batt + p_pv)
+                            eta = self.eff_elc(e_H2 / p_elc)
+                            m_H2 = (e_H2 * eta) / (120 / 3.6)
+                            if i == j:
+                                if e_H2 == energia_disp: 
+                                    E_batt[i] = batt_prev - (energia_disp - p_pv) / eff_batt
+                                elif e_H2 == e_batt_max * eff_batt + p_pv: 
+                                    E_batt[i] = batt_prev - e_batt_max
+                            j += 1
+                            flag = 0 
+                            count_to_24 = 0 
+                        elif p_elc <= energia_disp:
+                            e_H2 = min(e_batt_max * eff_batt + p_pv, p_elc)
+                            if i == j:
+                                if e_H2 == e_batt_max * eff_batt + p_pv:
+                                    eta = self.eff_elc(e_H2 / p_elc)
+                                    m_H2 = (e_H2 * eta) / (120 / 3.6)
+                                    E_batt[i] = batt_prev - e_batt_max
+                                elif e_H2 == p_elc:
+                                    m_H2 = e_H2 * 0.565 / (120 / 3.6)
+                                    E_batt[i] = batt_prev - (p_elc - p_pv) / eff_batt
+                            j += 1
+                            flag = 0 
+                            count_to_24 = 0 
 
-                        """if E_batt[i] > p_batt: # qui gestisco l'immissione in rete; infatti immetto in rete solo se la batteria è completamente carica oppure se ho un surplus che la batteria non riesce ad assorbire perchè non ha una potenza sufficiente
-                            e_im += (E_batt[i] - p_batt)/self.eff_batt
-                            E_batt[i] -= e_im * self.eff_batt
-                        if p_elc - energia_disp > e_batt_max:
-#                            e_im +="""
+                    elif p_elc <= p_pv:
+                        e_H2 = p_elc
+                        m_H2 = e_H2 * 0.565 / (120 / 3.6)
+                        E_batt[i] = batt_prev + min((p_pv - p_elc) * eff_batt, p_batt - batt_prev, e_batt_max)
+                        e_im = p_pv - p_elc - (E_batt[i] - batt_prev) / eff_batt
+                        j += 1
+                        flag = 0 
+                        count_to_24 = 0 
 
-                        # noinspection PyUnboundLocalVariable
-                        E_H2_h[i] = e_H2  # vettore orario di energia in ingresso all'elettrolizzatore
-                        # noinspection PyUnboundLocalVariable
-                        M_H2_h[i] = m_H2  # vettore orario della massa di energia
-                        E_im_h[i] = e_im  # vettore orario dell'energia immessa in rete
-                        E_batt_disponibile_h[i] = energia_disp_batt
-                        Energia_disp[i] = energia_disp
-                        P_pv_h[i] = p_pv
-                        max_erogabile[i] = e_batt_max*self.eff_batt + p_pv
-                        # fino a qui lo fa per ogni ora
+                    E_H2_h[i] = e_H2  
+                    M_H2_h[i] = m_H2  
+                    E_im_h[i] = e_im  
+                    E_batt_disponibile_h[i] = energia_disp_batt
+                    Energia_disp[i] = energia_disp
+                    max_erogabile[i] = e_batt_max * eff_batt + p_pv
+                    
+                    # Aggiorniamo lo stato precedente per il prossimo ciclo
+                    batt_prev = E_batt[i]
 
-                    e_H2_ = np.sum(E_H2_h)
-                    e_im_ = np.sum(E_im_h)
-                    m_H2_ = np.sum(M_H2_h)
-                    spegn_giorn_proj = self.off + self.count2 #- len(self.E_PV)/24 # qui ci sono i numeri di spegnimenti durante il giorno
-                    e_TOT = len(self.E_PV) * p_elc
-                    cf = e_H2_ / e_TOT * 100
-                    autoconsumo = e_H2_ / self.e_pv * 100
+                # --- FINE LOOP ---
+                
+                # Salvataggio dati progetto
+                e_H2_ = np.sum(E_H2_h)
+                e_im_ = np.sum(E_im_h)
+                m_H2_ = np.sum(M_H2_h)
+                spegn_giorn_proj = off_count + count2 
+                e_TOT = len(E_PV_array) * p_elc
+                
+                cf = (e_H2_ / e_TOT * 100) if e_TOT > 0 else 0
+                autoconsumo = (e_H2_ / self.e_pv * 100) if self.e_pv > 0 else 0
 
-
-
-
-
-
-
-
-                    # qui creo i vettori che alla posizione k-esima ci sono tutte le informazioni sul progetto k
-                    self.spegn_giorn[index] = spegn_giorn_proj
-                    self.OFF[index] = self.off
-                    self.potenza_elett[index] = p_elc
-                    self.potenza_batt[index] = p_batt
-                    self.CF[index] = cf
-                    self.Auto[index] = autoconsumo
-                    self.E_H2[index] = e_H2_
-                    self.E_im[index] = e_im_
-                    self.M_H2[index] = m_H2_
-                    self.andamenti[index, 0, :] = E_H2_h
-                    self.andamenti[index, 1, :] = M_H2_h
-                    self.andamenti[index, 2, :] = E_im_h
-                    self.andamenti[index, 3, :] = P_pv_h
-                    self.andamenti[index, 4, :] = Pot_min_elett
-                    self.andamenti[index, 5, :] = Pot_max_elett
-                    self.andamenti[index, 6, :] = E_batt
-                    self.andamenti[index, 7, :] = Pot_max_batt
-                    self.andamenti[index, 8, :] = E_batt_disponibile_h
-                    self.andamenti[index, 9, :] = Energia_disp
-                    self.andamenti[index, 10, :] = max_erogabile
-                    if self.lingua == "ENG":
-                        self.print_progress_bar(index + 1, len(self.E_H2), suffix = "Technical Analysis with Battery")
-                    elif self.lingua == "ITA":
-                        self.print_progress_bar(index + 1, len(self.E_H2), suffix = "Analisi Tecnica con batteria")
-                    index += 1
+                self.spegn_giorn[index] = spegn_giorn_proj
+                self.OFF[index] = off_count
+                self.potenza_elett[index] = p_elc
+                self.potenza_batt[index] = p_batt
+                self.CF[index] = cf
+                self.Auto[index] = autoconsumo
+                self.E_H2[index] = e_H2_
+                self.E_im[index] = e_im_
+                self.M_H2[index] = m_H2_
+                
+                self.andamenti[index, 0, :] = E_H2_h
+                self.andamenti[index, 1, :] = M_H2_h
+                self.andamenti[index, 2, :] = E_im_h
+                self.andamenti[index, 3, :] = E_PV_array
+                self.andamenti[index, 4, :] = np.full(len(E_PV_array), p_elc_min)
+                self.andamenti[index, 5, :] = np.full(len(E_PV_array), p_elc)
+                self.andamenti[index, 6, :] = E_batt
+                self.andamenti[index, 7, :] = np.full(len(E_PV_array), p_batt)
+                self.andamenti[index, 8, :] = E_batt_disponibile_h
+                self.andamenti[index, 9, :] = Energia_disp
+                self.andamenti[index, 10, :] = max_erogabile
+                
+                if hasattr(self, 'progress_bar') and self.progress_bar is not None:
+                    pct = (index + 1) / total_projects
+                    self.progress_bar.progress(pct)
+                    msg = "Technical Analysis with Battery" if self.lingua == "ENG" else "Analisi Tecnica con batteria"
+                    self.status_text.text(f"{pct * 100:.1f}% - {msg}")
+                index += 1
 
     def run_analysis(self):
         if self.batteria == "SI":
