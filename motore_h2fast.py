@@ -128,86 +128,80 @@ class Analisi_tecnica:
         y = (-6.1371 * x ** 6 + 24.394 * x ** 5 - 39.663 * x ** 4 + 33.988 * x ** 3 - 16.412 * x ** 2 + 4.2929 * x + 0.1022)
         return y
 
-    def run_analysis_nobattery(self):  # Qui troviamo le legiche della simulazione dei flussi energetici nel caso di assenza di batteria
-        for index, p_elc in enumerate(self.P_elc):  # per ogni taglia dell'eletrolizzatore salvo il suo indice e il suo valore
-            p_elc_min = self.min_elet * p_elc  # Potenza minima di soglia per entrata in lavoro dell'elettrolizzatore
-            E_H2_h = np.zeros(len(self.E_PV))  # vettore energia autoconsumata per produrre idrogeno per ogni ora dell'anno
-            M_H2_h = np.zeros(len(self.E_PV))  # vettore massa idrogeno prodotto per ogni ora dell'anno
-            E_im_h = np.zeros(len(self.E_PV))  # vettore energia immessa in rete per ogni ora dell'anno
-            P_pv_h = np.zeros(len(self.E_PV))  # vettore energia prodotta dal fotovoltaico per ogni ora dell'anno
-            Pot_min_elett = np.full(len(self.E_PV),p_elc_min)  # questi sono dei vettori che hanno sempre il valore minimo per far funzionare l'elttrolizzatore (servono per essere disegnati)
-            Pot_max_elett = np.full(len(self.E_PV),p_elc)  # questi sono dei vettori che hanno sempre il valore massimo per far funzionare l'elttrolizzatore (servono per essere disegnati)
+def run_analysis_nobattery(self):  
+        for index, p_elc in enumerate(self.P_elc):
+            p_elc_min = self.min_elet * p_elc  
+            p_pv = self.E_PV  # array vettoriale di 8760 valori
+            
+            # --- 1. VETTORIZZAZIONE DELLE CONDIZIONI LOGICHE ---
+            # Invece degli "if/elif", creiamo 3 "maschere" (array di True/False) calcolate istantaneamente
+            cond_max = p_pv > p_elc
+            cond_mid = (p_pv >= p_elc_min) & (p_pv <= p_elc)
+            cond_off = p_pv < p_elc_min
 
-            # variabili per lo spegnimento
-            self.off = 0  # per il momento l'elttrolizzatore non si è mai spento quindi il numero di spegnimenti è uguale a zero
-            self.flag = 1  # l'elttrolizzatore comincia da spento
-            self.count_to_24 = 0  # qeusta variabile mi serve per capire se l'elettrolizzatore ha mai non lavorato per un numero maggiore di 24 ore; ovvero è stato spento tutto il giorno
-            self.count2 = 0  # qui conto i casi in cui l'lettrolizzatore non ha lavorato per un intero giorno
+            # --- 2. CALCOLO ENERGIA IDROGENO E IMMESSA ---
+            E_H2_h = np.zeros_like(p_pv)
+            E_H2_h[cond_max] = p_elc
+            E_H2_h[cond_mid] = p_pv[cond_mid]
 
-            for i, p_pv in enumerate(self.E_PV):  # qui
-                if p_pv > p_elc:  # se la potenza derivante da PV è maggiore della potenza massima dell'elettrolizzaatore
-                    e_H2 = p_elc  # produco idrogeno al massimo della potenza dell'elettrolizzatore
-                    e_im = p_pv - e_H2  # l'energia immessa è la differenza tra quella che produco e quella che utilizzo
-                    m_H2 = e_H2 * 0.565 / (120 / 3.6)  # così ottengo la massa di idrogeno; 0.565 = self.eff_elc(1)
+            E_im_h = np.zeros_like(p_pv)
+            E_im_h[cond_max] = p_pv[cond_max] - p_elc
+            E_im_h[cond_off] = p_pv[cond_off]
 
-                    # noinspection PyTypeChecker
-                    self.flag = 0  # qui l'elettrolizzatore è acceso perché produco
-                    self.count_to_24 = 0  # sicuro ha prodotto oggi
+            # --- 3. CALCOLO MASSA IDROGENO (Con Polinomio Vettorizzato) ---
+            M_H2_h = np.zeros_like(p_pv)
+            
+            # Caso Max: efficienza a potenza nominale (var = 1) -> eff_elc(1) = 0.565
+            M_H2_h[cond_max] = p_elc * 0.565 / (120 / 3.6)
+            
+            # Caso Mid: efficienza variabile
+            # Applichiamo il tuo polinomio di 6° grado SOLO alle ore in cui serve, in un colpo solo!
+            var_mid = p_pv[cond_mid] / p_elc
+            eta_mid = self.eff_elc(var_mid)
+            M_H2_h[cond_mid] = (p_pv[cond_mid] * eta_mid) / (120 / 3.6)
 
-                elif p_elc_min <= p_pv < p_elc:  # se la potenza derivante da PV è minore della potenza massima e maggiore della potenza minima dell'elettrolizzaatore
-                    e_H2 = p_pv  # produco idrogeno non al massimo ma in base alla prodotta in quest'ora dal fotovoltaico
-                    e_im = 0  # non immetto energia nell'elettrolizzatore
-                    var = p_pv / p_elc  # questa variabile è utilizzata per capire quanto produce l'elettolizzatore se non lavora al massimmo
-                    eta = self.eff_elc(var)
-                    m_H2 = e_H2 * eta / (120 / 3.6)  # ottengo la massa di idrogneo
+            # --- 4. ALGEBRA DELLE SEQUENZE PER GLI SPEGNIMENTI ---
+            is_off = cond_off.astype(int)  # Array di 1 (spento) e 0 (acceso)
+            
+            # Conta quante volte passa da acceso a spento (self.off)
+            # Aggiungiamo un 1 all'inizio perché il sistema parte sempre da spento (flag=1)
+            padded_for_off = np.insert(is_off, 0, 1)
+            diffs_off = np.diff(padded_for_off)
+            self.off = np.sum(diffs_off == 1) 
 
-                    self.flag = 0  # qui l'elettrolizzatore è a lavoro
-                    self.count_to_24 = 0  # qui l'elettrolizzatore sta riposando. fa le ninne e le nanne
+            # Conta i giorni interi di fermo (self.count2) senza loop!
+            # Troviamo la lunghezza di ogni singolo blocco di spegnimento continuo
+            padded_for_seq = np.pad(is_off, (1, 1), 'constant', constant_values=0)
+            diffs_seq = np.diff(padded_for_seq)
+            starts = np.where(diffs_seq == 1)[0]   # Indici in cui si spegne
+            ends = np.where(diffs_seq == -1)[0]    # Indici in cui si riaccende
+            lengths = ends - starts                # Durata di ogni singolo spegnimento
+            self.count2 = np.sum(lengths // 24)    # Quanti blocchi da 24h ci stanno in ogni sequenza
 
-                elif p_pv <= p_elc_min:  # in questo caso non produco se l'energia da PV è inferiore della potenza minima
-                    e_H2 = 0  # se non produco non do energia all'elettrolizzatore
-                    e_im = p_pv  # tutta l'energia che produco è immessa in rete
-                    m_H2 = 0  # non ho alcuna massa di idrogeno
+            # --- 5. SOMMARI E SALVATAGGIO ---
+            e_H2 = np.sum(E_H2_h)  
+            e_im = np.sum(E_im_h)  
+            m_H2 = np.sum(M_H2_h)  
+            spegn_giorn_proj = self.count2 + self.off  
+            e_TOT = len(self.E_PV) * p_elc  
+            
+            cf = (e_H2 / e_TOT * 100) if e_TOT > 0 else 0
+            autoconsumo = (e_H2 / self.e_pv * 100) if self.e_pv > 0 else 0
 
-                    if self.flag == 0:  # se l'ora precedente era acceso
-                        self.off += 1  # consideralo come spegnimento
-                        self.flag = 1  # lo spengo
-                    else:  # se l'ora precedente era spento
-                        self.flag = 1  # continua a tenerlo spento
-                    self.count_to_24 += 1  # qui aumento il conto delle ore in cui è spento
-                    if self.count_to_24 == 24:  # se è spento per un giorno di fila
-                        self.count2 += 1  # questa varibile conta i giorni in cui è spento tutto il giorno
-                        self.count_to_24 = 0  # ricomincia a contare
+            # Salvataggio nei vettori globali della classe
+            self.OFF[index] = self.off  
+            self.spegn_giorn[index] = spegn_giorn_proj  
+            self.CF[index] = cf  
+            self.Auto[index] = autoconsumo  
+            self.E_H2[index] = e_H2  
+            self.E_im[index] = e_im  
+            self.M_H2[index] = m_H2  
 
-                # Costruzione dei vettori energetici
-                # noinspection PyUnboundLocalVariable
-                E_H2_h[i] = e_H2  # vettore orario dell'energia in elettrolizzatore
-                # noinspection PyUnboundLocalVariable
-                M_H2_h[i] = m_H2  # vettore orario della massa di idrogeno
-                # noinspection PyUnboundLocalVariable
-                E_im_h[i] = e_im  # vettore orario dell'energia immessa
-                P_pv_h[i] = p_pv  # vettore orario dell'energia da PV
-
-
-            # calcolo delle infromazioni principali per ogni progetto
-            e_H2 = np.sum(E_H2_h)  # energia in elettrolizzatore in un'anno
-            e_im = np.sum(E_im_h)  # energia immessa in un'anno
-            m_H2 = np.sum(M_H2_h)  # massa idrogeno prodotta in un'anno
-            spegn_giorn_proj = self.count2 + self.off  #- len(self.E_PV) / 24      # qui ci sono i numeri di spegnimenti durante il giorno
-            e_TOT = len(self.E_PV) * p_elc  # energia totale ovvero l'energia totale se avesse funzionato al 100% tutti i giorni
-            cf = e_H2 / e_TOT * 100  # calcolo del capacity factor
-            autoconsumo = e_H2 / self.e_pv * 100  # calcolo dell'autoconsumo
-
-            # index fa a capo al progetto con determinata taglia di elettrolizzatore:
-            self.OFF[index] = self.off  # numero di spegnimenti per ogni progetto
-            self.spegn_giorn[index] = spegn_giorn_proj  # numero di spegnimento per ogni progetto (considerando anche i giorni in cui non ha lavorato come spegnimenti)
-            self.CF[index] = cf  # capacity factor per ogni progetto
-            self.Auto[index] = autoconsumo  # valore dell'autconsumo per ogni progetto
-            self.E_H2[index] = e_H2  # energia utilizzata per elettrolizzare per ogni progetto
-            self.E_im[index] = e_im  # energia immessa per ogni progetto
-            self.M_H2[index] = m_H2  # massa di idrogeno per ogni progetto
-
-            # qui invece ci sono i vettori dei flussi energetici per ogni progetto (servono per dopo disegnare i grafici)
+            # Prepariamo le matrici orarie (self.andamenti)
+            P_pv_h = p_pv
+            Pot_min_elett = np.full(len(self.E_PV), p_elc_min)
+            Pot_max_elett = np.full(len(self.E_PV), p_elc)
+            
             self.andamenti[index, 0, :] = E_H2_h
             self.andamenti[index, 1, :] = M_H2_h
             self.andamenti[index, 2, :] = E_im_h
@@ -215,11 +209,12 @@ class Analisi_tecnica:
             self.andamenti[index, 4, :] = Pot_min_elett
             self.andamenti[index, 5, :] = Pot_max_elett
 
-            # qui invece disegno le barre di progresso; per capire a che punto è la simulazione
-            if self.lingua == "ENG":
-                self.print_progress_bar(index + 1, len(self.E_H2), suffix="Technical Analysis without Battery")
-            elif self.lingua == "ITA":
-                self.print_progress_bar(index + 1, len(self.E_H2), suffix="Analisi Tecnica senza batteria")
+            # Update interfaccia Streamlit (se abilitata)
+            if hasattr(self, 'progress_bar') and self.progress_bar is not None:
+                pct = (index + 1) / len(self.P_elc)
+                self.progress_bar.progress(pct)
+                msg = "Technical Analysis without Battery" if self.lingua == "ENG" else "Analisi Tecnica senza batteria"
+                self.status_text.text(f"{pct * 100:.1f}% - {msg}")
 
     def run_analysis_battery_static_min(self):  # queste sono le logiche della produzione con batteria
         index = 0  # qui ho gli indici dei progetti
