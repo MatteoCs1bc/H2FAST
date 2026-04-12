@@ -128,6 +128,12 @@ class Analisi_tecnica:
         y = (-6.1371 * x ** 6 + 24.394 * x ** 5 - 39.663 * x ** 4 + 33.988 * x ** 3 - 16.412 * x ** 2 + 4.2929 * x + 0.1022)
         return y
 
+def run_analysis(self):
+        if self.batteria == "SI":
+            self.run_analysis_battery_static_min()
+        elif self.batteria == "NO":
+            self.run_analysis_nobattery()
+
 def run_analysis_nobattery(self):  
         for index, p_elc in enumerate(self.P_elc):
             p_elc_min = self.min_elet * p_elc  
@@ -427,12 +433,6 @@ def run_analysis_battery_static_min(self):
                     self.status_text.text(f"{pct * 100:.1f}% - {msg}")
                 index += 1
                 
-def run_analysis(self):
-    if self.batteria == "SI":
-        self.run_analysis_battery_static_min()
-    elif self.batteria == "NO":
-        self.run_analysis_nobattery()
-
 
 
     #da qui in poi ci sono le funzioni per la barra di completamento
