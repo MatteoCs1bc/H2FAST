@@ -426,12 +426,12 @@ def run_analysis_battery_static_min(self):
                     msg = "Technical Analysis with Battery" if self.lingua == "ENG" else "Analisi Tecnica con batteria"
                     self.status_text.text(f"{pct * 100:.1f}% - {msg}")
                 index += 1
-
-    def run_analysis(self):
-                if self.batteria == "SI":
-                        self.run_analysis_battery_static_min()
-                elif self.batteria == "NO":
-                        self.run_analysis_nobattery()
+                
+def run_analysis(self):
+        if self.batteria == "SI":
+            self.run_analysis_battery_static_min()
+        elif self.batteria == "NO":
+            self.run_analysis_nobattery()
 
 
 
