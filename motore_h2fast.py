@@ -128,7 +128,7 @@ class Analisi_tecnica:
         y = (-6.1371 * x ** 6 + 24.394 * x ** 5 - 39.663 * x ** 4 + 33.988 * x ** 3 - 16.412 * x ** 2 + 4.2929 * x + 0.1022)
         return y
 
-def run_analysis(self):
+    def run_analysis(self):
         if self.batteria == "SI":
             self.run_analysis_battery_static_min()
         elif self.batteria == "NO":
