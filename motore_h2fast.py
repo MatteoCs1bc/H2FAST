@@ -129,10 +129,10 @@ class Analisi_tecnica:
         return y
 
 def run_analysis(self):
-    if self.batteria == "SI":
-        self.run_analysis_battery_static_min()
-    elif self.batteria == "NO":
-        self.run_analysis_nobattery()
+        if self.batteria == "SI":
+            self.run_analysis_battery_static_min()
+        elif self.batteria == "NO":
+            self.run_analysis_nobattery()
 
 def run_analysis_nobattery(self):  
         for index, p_elc in enumerate(self.P_elc):
