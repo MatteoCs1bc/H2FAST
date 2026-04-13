@@ -33,7 +33,7 @@ def calcola_potenza_eolica_kw(v_vento_ms, p_nominale_kw):
     else:
         return p_nominale_kw
 
-# Inizializziamo le coordinate nella memoria per non perderle ai riavvii
+# Inizializziamo le coordinate nella memoria
 if "lat_s" not in st.session_state: st.session_state.update({"lat_s": 41.89, "lon_s": 12.49, "lat_w": 41.89, "lon_w": 12.49})
 
 # ==========================================
@@ -164,22 +164,18 @@ st.header("🚀 Step 4: Esecuzione Simulazione")
 if st.button("AVVIA OTTIMIZZAZIONE", use_container_width=True, type="primary"):
     temp_filename = "temp_input_orario"
 
-    # --- FASE 1: DOWNLOAD DATI ---
     if metodo_dati == "Mappa Interattiva (API)":
         with st.spinner('📡 Acquisizione dati solari ed eolici in corso...'):
             try:
-                # Sole
                 url_pv = f"https://re.jrc.ec.europa.eu/api/v5_2/seriescalc?lat={st.session_state.lat_s}&lon={st.session_state.lon_s}&startyear=2019&endyear=2019&pvcalculation=1&peakpower={p_PV}&loss=14&outputformat=json"
                 df_pv = pd.DataFrame(requests.get(url_pv).json()['outputs']['hourly'])
                 p_solare_kw = (df_pv['P'] / 1000.0).values
                 
-                # Vento
                 url_wind = "https://archive-api.open-meteo.com/v1/archive"
                 params_wind = {"latitude": st.session_state.lat_w, "longitude": st.session_state.lon_w, "start_date": "2019-01-01", "end_date": "2019-12-31", "hourly": "windspeed_100m", "wind_speed_unit": "ms", "timezone": "UTC"}
                 v_vento = np.array(requests.get(url_wind, params=params_wind).json()['hourly']['windspeed_100m'])
                 p_eolico_kw = np.array([calcola_potenza_eolica_kw(v, p_Wind) for v in v_vento])
                 
-                # Fusione
                 min_len = min(len(p_solare_kw), len(p_eolico_kw))
                 df_export = pd.DataFrame({'P_kW': p_solare_kw[:min_len] + p_eolico_kw[:min_len]})
                 df_export.to_csv(temp_filename + ".csv", index=False, header=['P_kW'], sep=';', decimal=',')
@@ -191,7 +187,6 @@ if st.button("AVVIA OTTIMIZZAZIONE", use_container_width=True, type="primary"):
         if file_csv is None: st.stop()
         with open(temp_filename + ".csv", "wb") as f: f.write(file_csv.getbuffer())
 
-    # --- FASE 2: MOTORE MATEMATICO ---
     with st.spinner('Calcolo Vettoriale in corso... L\'ottimizzazione è attiva.'):
         potenza_nominale_totale = p_PV + p_Wind + p_Extra
         analisi1 = Analisi_tecnica(
@@ -212,14 +207,23 @@ if st.button("AVVIA OTTIMIZZAZIONE", use_container_width=True, type="primary"):
         if os.path.exists(temp_filename + ".csv"): os.remove(temp_filename + ".csv")
             
         top_progetti_tuples, dati_scatter = [], []
+        
+        # AGGIUNTO IL PAYBACK ALLA MEMORIA DEI GRAFICI!
         def salva_memoria(an_fin, andamenti_tecnici, val_batteria, cur_id):
             van = an_fin.VAN if an_fin.VAN is not None else -float('inf')
             lcoh_calc = an_fin.investimento / (an_fin.ProdAnnuaIdrogkg * DurPianEcon) if an_fin.ProdAnnuaIdrogkg > 0 else 0
             dati_scatter.append({
-                'ID_Progetto': cur_id, 'VAN [€]': van, 'TIR [%]': an_fin.TIR, 'LCOH Semplificato [€/kg]': lcoh_calc,
-                'Investimento CAPEX [€]': an_fin.investimento, 'Produzione Idrogeno [kg]': an_fin.ProdAnnuaIdrogkg, 
-                'Taglia Elettrolizzatore [kW]': an_fin.PotEle, 'Taglia Batteria [kWh]': val_batteria, 
-                'Energia Sprecata (Curtailment) [kWh]': an_fin.ProdElettVend, 'Capacity Factor [%]': an_fin.CapFac,
+                'ID_Progetto': cur_id, 
+                'VAN [€]': van, 
+                'TIR [%]': an_fin.TIR, 
+                'Payback Time [Anni]': an_fin.PAYBACK, # ECCOLO
+                'LCOH Semplificato [€/kg]': lcoh_calc,
+                'Investimento CAPEX [€]': an_fin.investimento, 
+                'Produzione Idrogeno [kg]': an_fin.ProdAnnuaIdrogkg, 
+                'Taglia Elettrolizzatore [kW]': an_fin.PotEle, 
+                'Taglia Batteria [kWh]': val_batteria, 
+                'Energia Sprecata (Curtailment) [kWh]': an_fin.ProdElettVend, 
+                'Capacity Factor [%]': an_fin.CapFac,
             })
             top_progetti_tuples.append((van, an_fin, andamenti_tecnici))
             top_progetti_tuples.sort(key=lambda x: x[0], reverse=True)
@@ -287,7 +291,7 @@ if st.session_state.get('simulazione_completata', False):
         st.plotly_chart(fig_flussi, use_container_width=True)
 
     with tab3:
-        st.markdown("👇 Clicca su un pallino per vedere i dettagli tecnici.")
+        st.markdown("👇 **Clicca su un pallino per vedere tutti i dettagli dell'impianto!**")
         col_x, col_y, col_color = st.columns(3)
         cols = [c for c in df_tutti.columns if c != 'ID_Progetto']
         x_var = col_x.selectbox("Asse X", cols, index=cols.index('Investimento CAPEX [€]'))
@@ -306,16 +310,50 @@ if st.session_state.get('simulazione_completata', False):
         fig_sa = px.scatter(df_tutti, x=x_var, y=y_var, color=color_var, color_continuous_scale=["#07d5df", "#f407fe"], custom_data=['ID_Progetto'])
         if not df_pareto.empty:
             fig_sa.add_trace(go.Scatter(x=df_pareto.sort_values(by=x_var)[x_var], y=df_pareto.sort_values(by=x_var)[y_var], mode='lines', line=dict(color='red', width=3, dash='dash'), name='Pareto', hoverinfo='skip'))
+        
+        # FIX CURSORE: Tolte le frecce di pan, messo il click pulito
         fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
-        # Riga precedente: 8 spazi a sinistra
+        fig_sa.update_layout(dragmode=False, clickmode='event+select', hovermode='closest')
+        
         sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
-
-        # Riga incriminata: DEVE avere esattamente 8 spazi a sinistra, allineata con "sel"
+        
         if sel and sel.selection.points:
             punto_cliccato = sel.selection.points[0]
+            c_data = punto_cliccato.get("customdata", None)
             
-            # Recupero "Blindato" della targa (customdata)
-            # ... resto del codice ...
-
-
-
+            id_selezionato = None
+            if c_data is not None:
+                if isinstance(c_data, dict):
+                    id_selezionato = c_data.get("ID_Progetto", list(c_data.values())[0])
+                elif isinstance(c_data, (list, tuple)):
+                    id_selezionato = c_data[0]
+                else:
+                    id_selezionato = c_data
+            
+            if id_selezionato is not None:
+                det = df_tutti[df_tutti['ID_Progetto'] == id_selezionato].iloc[0]
+                
+                st.success("🎯 **Dettagli Progetto Selezionato:**")
+                
+                # RIGA 1: Metriche Economiche
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("💰 VAN", f"€ {det['VAN [€]']:,.0f}")
+                c2.metric("📈 TIR", f"{det['TIR [%]']:.2f} %")
+                c3.metric("⏳ Payback Time", f"{det['Payback Time [Anni]']:.1f} Anni")
+                c4.metric("⚖️ LCOH Semplificato", f"€ {det['LCOH Semplificato [€/kg]']:.2f} /kg")
+                
+                # RIGA 2: Metriche di Impianto
+                c5, c6, c7, c8 = st.columns(4)
+                c5.metric("⚡ Elettrolizzatore", f"{det['Taglia Elettrolizzatore [kW]']:,.0f} kW")
+                c6.metric("🔋 Batteria", f"{det['Taglia Batteria [kWh]']:,.0f} kWh")
+                c7.metric("💶 Investimento Totale", f"€ {det['Investimento CAPEX [€]']:,.0f}")
+                c8.metric("⚙️ Capacity Factor", f"{det['Capacity Factor [%]']:.1f} %")
+                
+                # RIGA 3: Metriche Energetiche
+                c9, c10, c11, c12 = st.columns(4)
+                c9.metric("💨 Produzione H2", f"{det['Produzione Idrogeno [kg]']:,.0f} kg/anno")
+                c10.metric("🗑️ Curtailment (Spreco)", f"{det['Energia Sprecata (Curtailment) [kWh]']:,.0f} kWh")
+            else:
+                st.warning("⚠️ Clicca al centro di un pallino colorato per vedere i dettagli!")
+        else:
+            st.info("👆 Clicca su un pallino nel grafico per caricare i dati della configurazione.")
