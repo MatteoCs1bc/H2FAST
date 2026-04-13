@@ -307,43 +307,15 @@ if st.session_state.get('simulazione_completata', False):
         if not df_pareto.empty:
             fig_sa.add_trace(go.Scatter(x=df_pareto.sort_values(by=x_var)[x_var], y=df_pareto.sort_values(by=x_var)[y_var], mode='lines', line=dict(color='red', width=3, dash='dash'), name='Pareto', hoverinfo='skip'))
         fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
-        
-    sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
+        # Riga precedente: 8 spazi a sinistra
+        sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
 
+        # Riga incriminata: DEVE avere esattamente 8 spazi a sinistra, allineata con "sel"
         if sel and sel.selection.points:
             punto_cliccato = sel.selection.points[0]
             
             # Recupero "Blindato" della targa (customdata)
-            c_data = punto_cliccato.get("customdata", None)
-            id_selezionato = None
-            
-            if c_data is not None:
-                if isinstance(c_data, dict):
-                    # Streamlit nuovo: è un dizionario {"ID_Progetto": 12}
-                    id_selezionato = c_data.get("ID_Progetto", list(c_data.values())[0])
-                elif isinstance(c_data, (list, tuple)):
-                    # Streamlit vecchio: è una lista [12]
-                    id_selezionato = c_data[0]
-                else:
-                    # Caso limite: è un numero singolo
-                    id_selezionato = c_data
-            
-            if id_selezionato is not None:
-                det = df_tutti[df_tutti['ID_Progetto'] == id_selezionato].iloc[0]
-                
-                st.success("🎯 **Progetto Selezionato dal Grafico:**")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("💰 VAN", f"€ {det['VAN [€]']:,.0f}")
-                c2.metric("⚖️ LCOH", f"€ {det['LCOH Semplificato [€/kg]']:.2f} /kg")
-                c3.metric("⚡ Elettrolizzatore", f"{det['Taglia Elettrolizzatore [kW]']:,.0f} kW")
-                c4.metric("🔋 Batteria", f"{det['Taglia Batteria [kWh]']:,.0f} kWh")
-                
-                c5, c6, c7, c8 = st.columns(4)
-                c5.metric("💨 H2", f"{det['Produzione Idrogeno [kg]']:,.0f} kg")
-                c6.metric("🗑️ Curtailment", f"{det['Energia Sprecata (Curtailment) [kWh]']:,.0f} kWh")
-                c7.metric("💶 CAPEX", f"€ {det['Investimento CAPEX [€]']:,.0f}")
-                c8.metric("📈 Cap Factor", f"{det['Capacity Factor [%]']:.1f} %")
-            else:
-                st.warning("⚠️ Hai cliccato sulla linea rossa. Clicca al centro di un pallino per vedere i dettagli!")
-        else:
-            st.info("👆 Clicca su un pallino per vedere i dettagli esatti di quella configurazione.")
+            # ... resto del codice ...
+
+
+
