@@ -308,12 +308,14 @@ if st.session_state.get('simulazione_completata', False):
             fig_sa.add_trace(go.Scatter(x=df_pareto.sort_values(by=x_var)[x_var], y=df_pareto.sort_values(by=x_var)[y_var], mode='lines', line=dict(color='red', width=3, dash='dash'), name='Pareto', hoverinfo='skip'))
         fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
         
-sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
+# Questa riga era già qui, assicurati che la s di "sel" sia allineata qui sotto!
+        # fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
         
+        sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
+
         if sel and sel.selection.points:
             punto_cliccato = sel.selection.points[0]
             
-            # Controlliamo se il punto ha la targa "customdata" (i pallini ce l'hanno, la linea rossa no!)
             if "customdata" in punto_cliccato:
                 id_selezionato = punto_cliccato["customdata"][0]
                 det = df_tutti[df_tutti['ID_Progetto'] == id_selezionato].iloc[0]
@@ -321,7 +323,7 @@ sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selec
                 st.success("🎯 **Progetto Selezionato dal Grafico:**")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("💰 VAN", f"€ {det['VAN [€]']:,.0f}")
-                c2.metric("⚖️ LCOH", f"€ {det['LCOH Semplificato [€/kg]']:.2f}")
+                c2.metric("⚖️ LCOH", f"€ {det['LCOH Semplificato [€/kg]']:.2f} /kg")
                 c3.metric("⚡ Elettrolizzatore", f"{det['Taglia Elettrolizzatore [kW]']:,.0f} kW")
                 c4.metric("🔋 Batteria", f"{det['Taglia Batteria [kWh]']:,.0f} kWh")
                 
