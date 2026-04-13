@@ -308,7 +308,7 @@ if st.session_state.get('simulazione_completata', False):
             fig_sa.add_trace(go.Scatter(x=df_pareto.sort_values(by=x_var)[x_var], y=df_pareto.sort_values(by=x_var)[y_var], mode='lines', line=dict(color='red', width=3, dash='dash'), name='Pareto', hoverinfo='skip'))
         fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
         
-sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
+    sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
 
         if sel and sel.selection.points:
             punto_cliccato = sel.selection.points[0]
