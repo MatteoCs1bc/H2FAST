@@ -128,13 +128,13 @@ class Analisi_tecnica:
         y = (-6.1371 * x ** 6 + 24.394 * x ** 5 - 39.663 * x ** 4 + 33.988 * x ** 3 - 16.412 * x ** 2 + 4.2929 * x + 0.1022)
         return y
 
-def run_analysis(self):
+    def run_analysis(self):
         if self.batteria == "SI":
             self.run_analysis_battery_static_min()
         elif self.batteria == "NO":
             self.run_analysis_nobattery()
 
-def run_analysis_nobattery(self):  
+    def run_analysis_nobattery(self):  
         for index, p_elc in enumerate(self.P_elc):
             p_elc_min = self.min_elet * p_elc  
             p_pv = self.E_PV  # array vettoriale di 8760 valori
@@ -222,7 +222,7 @@ def run_analysis_nobattery(self):
                 msg = "Technical Analysis without Battery" if self.lingua == "ENG" else "Analisi Tecnica senza batteria"
                 self.status_text.text(f"{pct * 100:.1f}% - {msg}")
 
-def run_analysis_battery_static_min(self):  
+    def run_analysis_battery_static_min(self):  
         index = 0
         total_projects = self.qt_progetti
         
