@@ -308,16 +308,27 @@ if st.session_state.get('simulazione_completata', False):
             fig_sa.add_trace(go.Scatter(x=df_pareto.sort_values(by=x_var)[x_var], y=df_pareto.sort_values(by=x_var)[y_var], mode='lines', line=dict(color='red', width=3, dash='dash'), name='Pareto', hoverinfo='skip'))
         fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
         
-# Questa riga era già qui, assicurati che la s di "sel" sia allineata qui sotto!
-        # fig_sa.update_traces(marker=dict(size=9, opacity=0.8), selector=dict(mode='markers'))
-        
-        sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
+sel = st.plotly_chart(fig_sa, use_container_width=True, on_select="rerun", selection_mode="points")
 
         if sel and sel.selection.points:
             punto_cliccato = sel.selection.points[0]
             
-            if "customdata" in punto_cliccato:
-                id_selezionato = punto_cliccato["customdata"][0]
+            # Recupero "Blindato" della targa (customdata)
+            c_data = punto_cliccato.get("customdata", None)
+            id_selezionato = None
+            
+            if c_data is not None:
+                if isinstance(c_data, dict):
+                    # Streamlit nuovo: è un dizionario {"ID_Progetto": 12}
+                    id_selezionato = c_data.get("ID_Progetto", list(c_data.values())[0])
+                elif isinstance(c_data, (list, tuple)):
+                    # Streamlit vecchio: è una lista [12]
+                    id_selezionato = c_data[0]
+                else:
+                    # Caso limite: è un numero singolo
+                    id_selezionato = c_data
+            
+            if id_selezionato is not None:
                 det = df_tutti[df_tutti['ID_Progetto'] == id_selezionato].iloc[0]
                 
                 st.success("🎯 **Progetto Selezionato dal Grafico:**")
@@ -333,6 +344,6 @@ if st.session_state.get('simulazione_completata', False):
                 c7.metric("💶 CAPEX", f"€ {det['Investimento CAPEX [€]']:,.0f}")
                 c8.metric("📈 Cap Factor", f"{det['Capacity Factor [%]']:.1f} %")
             else:
-                st.warning("⚠️ Hai cliccato sulla linea rossa. Clicca esattamente al centro di un pallino colorato per i dettagli!")
+                st.warning("⚠️ Hai cliccato sulla linea rossa. Clicca al centro di un pallino per vedere i dettagli!")
         else:
             st.info("👆 Clicca su un pallino per vedere i dettagli esatti di quella configurazione.")
