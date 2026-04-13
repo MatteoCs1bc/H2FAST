@@ -51,7 +51,7 @@ p_Extra = 0.0
 if metodo_dati == "Mappa Interattiva (API)":
     luoghi_separati = st.toggle("📍 Usa due luoghi geografici differenti per Fotovoltaico ed Eolico")
     
-    if non luoghi_separati:
+    if not luoghi_separati:
         st.markdown("**Seleziona la località per l'Impianto Ibrido (Sole + Vento)**")
         m = folium.Map(location=[st.session_state.lat_s, st.session_state.lon_s], zoom_start=5)
         map_data = st_folium(m, height=350, width=700, key="mappa_unica")
