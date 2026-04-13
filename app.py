@@ -131,7 +131,6 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
             lingua=lingua, eff_batt=eff_batt, min_elet=min_elet
         )
         
-        # Leghiamo la barra di caricamento a Streamlit
         analisi1.progress_bar = st.progress(0)
         analisi1.status_text = st.empty()
         
@@ -145,7 +144,6 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
         
         def salva_memoria(an_fin, andamenti_tecnici, val_batteria):
             van = an_fin.VAN if an_fin.VAN is not None else -float('inf')
-            # Calcolo un LCOH semplificato (CAPEX / Kg di H2 Prodotti nella vita utile) per l'analisi
             lcoh_calc = an_fin.investimento / (an_fin.ProdAnnuaIdrogkg * DurPianEcon) if an_fin.ProdAnnuaIdrogkg > 0 else 0
             
             dati_scatter.append({
@@ -196,12 +194,28 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
             top_progetti.append(an_fin_obj)
             andamenti_top.append(item[2])
 
-    st.success("✅ Calcolo completato!")
-    df_tutti = pd.DataFrame(dati_scatter).dropna()
+        # ==========================================
+        # SALVATAGGIO NELLA CASSAFORTE (SESSION STATE)
+        # ==========================================
+        st.session_state['simulazione_completata'] = True
+        st.session_state['df_tutti'] = pd.DataFrame(dati_scatter).dropna()
+        st.session_state['top_progetti'] = top_progetti
+        st.session_state['andamenti_top'] = andamenti_top
+        st.session_state['batteria_usata'] = batteria
 
-    # ==========================================
-    # DASHBOARD DEI RISULTATI
-    # ==========================================
+# ==========================================
+# DASHBOARD DEI RISULTATI (Fuori dal blocco del bottone!)
+# ==========================================
+# Controlla se la cassaforte contiene i dati, se sì, disegna tutto!
+if st.session_state.get('simulazione_completata', False):
+    st.success("✅ Dati pronti per l'esplorazione!")
+    
+    # Recuperiamo i dati dalla cassaforte
+    df_tutti = st.session_state['df_tutti']
+    top_progetti = st.session_state['top_progetti']
+    andamenti_top = st.session_state['andamenti_top']
+    batteria_usata = st.session_state['batteria_usata']
+
     st.divider()
     tab1, tab2, tab3 = st.tabs(["📊 Tabelle Finanziarie", "⚡ Flussi Energetici (8760 ore)", "🎯 Frontiera di Pareto"])
 
@@ -212,7 +226,7 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
             'TIR [%]': [p.TIR for p in top_progetti],
             'PAYBACK [Anni]': [p.PAYBACK for p in top_progetti],
             'Taglia Elettrolizzatore [kW]': [p.PotEle for p in top_progetti],
-            'Taglia Batteria [kWh]': [p.AccuE for p in top_progetti] if batteria == "SI" else [0]*len(top_progetti),
+            'Taglia Batteria [kWh]': [p.AccuE for p in top_progetti] if batteria_usata == "SI" else [0]*len(top_progetti),
             'Produzione Idrogeno [kg/anno]': [p.ProdAnnuaIdrogkg for p in top_progetti]
         }).T
         df_sommario.columns = [f"Progetto {i+1}" for i in range(len(top_progetti))]
@@ -234,24 +248,23 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
         ore = np.arange(len(andamenti[0]))
         fig_flussi = go.Figure()
         
-        # Usiamo scattergl (WebGL) per gestire migliaia di punti fluidamente
         fig_flussi.add_trace(go.Scattergl(x=ore, y=andamenti[3], name='Prodotta FV', line=dict(color='#92D050')))
         fig_flussi.add_trace(go.Scattergl(x=ore, y=andamenti[2], name='Immessa in Rete', line=dict(color='#FFC000')))
         fig_flussi.add_trace(go.Scattergl(x=ore, y=andamenti[0], name='In Elettrolizzatore', line=dict(color='#00AF50')))
         fig_flussi.add_trace(go.Scattergl(x=ore, y=andamenti[5], name='Taglia Elettrolizzatore', line=dict(color='gray', dash='dash')))
-        if batteria == "SI":
+        if batteria_usata == "SI":
             fig_flussi.add_trace(go.Scattergl(x=ore, y=andamenti[6], name='Livello Batteria', line=dict(color='orange')))
             
         fig_flussi.update_layout(
             xaxis_title="Ora dell'anno", 
             yaxis_title="Energia [kWh] / Potenza [kW]",
-            xaxis=dict(rangeslider=dict(visible=True), type="-") # Aggiunge la barra dello zoom!
+            xaxis=dict(rangeslider=dict(visible=True), type="-")
         )
         st.plotly_chart(fig_flussi, use_container_width=True)
 
     with tab3:
         st.subheader("Analisi di Sensitività e Frontiera di Pareto")
-        st.markdown("Scegli due obiettivi in contrasto (es. Investimento vs VAN). La **linea rossa** ti mostrerà i progetti che offrono il miglior compromesso in assoluto, scartando quelli inefficienti.")
+        st.markdown("Scegli due obiettivi in contrasto (es. Investimento vs VAN). La **linea rossa** ti mostrerà i progetti che offrono il miglior compromesso.")
         
         col_x, col_y, col_color = st.columns(3)
         colonne_disp = df_tutti.columns.tolist()
@@ -260,12 +273,9 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
         y_var = col_y.selectbox("Asse Y (Obiettivo 2)", colonne_disp, index=colonne_disp.index('VAN [€]'))
         color_var = col_color.selectbox("Colore punti", colonne_disp, index=colonne_disp.index('Taglia Elettrolizzatore [kW]'))
 
-        # Logica per capire se l'utente vuole massimizzare o minimizzare quella variabile
-        # (Se è Costo/LCOH/Investimento di solito si vuole minimizzare, altrimenti massimizzare)
         max_x = False if any(word in x_var.lower() for word in ['costo', 'lcoh', 'investimento']) else True
         max_y = False if any(word in y_var.lower() for word in ['costo', 'lcoh', 'investimento']) else True
 
-        # Algoritmo di Frontiera di Pareto
         df_sorted = df_tutti.sort_values(by=x_var, ascending=not max_x)
         pareto_front = []
         best_y = -float('inf') if max_y else float('inf')
@@ -283,14 +293,12 @@ if st.button("🚀 AVVIA SIMULAZIONE COMPLETA", use_container_width=True, type="
                     
         df_pareto = pd.DataFrame(pareto_front)
 
-        # Grafico
         fig_sa = px.scatter(
             df_tutti, x=x_var, y=y_var, color=color_var,
             color_continuous_scale=["#07d5df", "#f407fe"],
-            hover_data=['Taglia Elettrolizzatore [kW]', 'Taglia Batteria [kWh]' if batteria=="SI" else 'Capacity Factor [%]']
+            hover_data=['Taglia Elettrolizzatore [kW]', 'Taglia Batteria [kWh]' if batteria_usata=="SI" else 'Capacity Factor [%]']
         )
         
-        # Disegniamo la linea rossa di Pareto sopra i puntini
         if not df_pareto.empty:
             df_pareto = df_pareto.sort_values(by=x_var)
             fig_sa.add_trace(go.Scatter(
