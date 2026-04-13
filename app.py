@@ -14,7 +14,18 @@ from motore_h2fast import Analisi_tecnica, Analisi_finanziaria
 
 st.set_page_config(page_title="H2FAsT Simulator", layout="wide")
 st.title("Simulatore H2FAsT - Dashboard Interattiva 🏭")
-st.markdown("Benvenuto nel simulatore. Segui i passaggi sottostanti per configurare il tuo impianto ibrido e avviare l'ottimizzazione.")
+
+# Leggiamo il testo direttamente dal file README.md esterno!
+try:
+    with open("README.md", "r", encoding="utf-8") as file:
+        testo_guida = file.read()
+        
+    with st.expander("ℹ️ Clicca qui per leggere la guida completa e scoprire come funziona"):
+        st.markdown(testo_guida)
+except FileNotFoundError:
+    st.info("Crea un file README.md nella stessa cartella per visualizzare qui la guida.")
+
+st.divider()
 
 # ==========================================
 # FUNZIONE EOLICA
